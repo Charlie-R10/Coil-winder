@@ -1,0 +1,181 @@
+enum pages {page0, page1,noOfPages};
+enum HMIData {spare, page, type, Nindex, data0, data1}; 
+
+
+void setup() {
+  // Start with serial port 1
+  Serial1.begin(9600);
+
+}
+
+void loop() {
+  HMI_read();
+}
+
+double coil_d;
+double bobbin_len;
+int no_turns;
+double time_per_turn;
+int turns_completed = 0;
+double progress = 0;
+double time_delay;
+
+// Functions to display and update variables in text and store in Arduino
+
+void HMI_coil_d() {
+  Serial1.print(F("t7.txt=\""));
+  Serial1.print(coil_d);  //Sends variable data over
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF")); //3x \xFF tells Nextion it's a completed string
+}
+
+void HMI_bobbin_len() {
+  Serial1.print(F("t8.txt=\""));
+  Serial1.print(bobbin_len);
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF"));
+}
+
+void HMI_no_turns() {
+  Serial1.print(F("t9.txt=\""));
+  Serial1.print(no_turns);
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF"));
+}
+
+void HMI_time_per_turn() {
+  Serial1.print(F("t10.txt=\""));
+  Serial1.print(time_per_turn);
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF"));
+}
+
+//Function for progress tracker and progress bar
+void HMI_progress_tracker() {
+  time_delay = time_per_turn*1000; //delay in ms
+  while (turns_completed <= no_turns) {
+    Serial1.print(F("t15.txt=\"")); //Prints current turns completed so user knows
+    Serial1.print(turns_completed);
+    Serial1.print(F("\""));
+    Serial1.print(F("\xFF\xFF\xFF"));
+    progress = (double(turns_completed)/double(no_turns))*100;  //Finds % of turns completed (current progress) and updates
+    Serial1.print(F("t16.txt=\"")); //Prints current turns completed so user knows
+    Serial1.print(progress); 
+    Serial1.print(F("\""));
+    Serial1.print(F("\xFF\xFF\xFF"));
+    delay(time_delay);
+    ++turns_completed; //adds to turns completed
+  }
+  //Thing to change page here
+}
+
+//Function to display stored variables and then run Arduino code
+void HMI_display_all() {
+  Serial1.print(F("t11.txt=\""));
+  Serial1.print(coil_d);
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF"));
+  Serial1.print(F("t12.txt=\""));
+  Serial1.print(bobbin_len);
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF"));
+  Serial1.print(F("t14.txt=\""));
+  Serial1.print(no_turns);
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF"));
+  Serial1.print(F("t13.txt=\""));
+  Serial1.print(time_per_turn);
+  Serial1.print(F("\""));
+  Serial1.print(F("\xFF\xFF\xFF"));
+
+  //Code can be put in here to run motors using variables 
+}
+
+
+//HMI_read takes the data sent from the Nextion
+//3 levels of nested switch statements page-type-index
+void HMI_read() {
+  #define read_data_size 10                       //Buffer to receive data from Nextion - (can change if needed)
+  static uint8_t HMI_read_data[read_data_size];   
+  static uint8_t HMI_read_data_i;                 //Counts bytes recieved from 
+  static uint8_t a5count;                         //0xa5 repeated 3 times is used as a start indicator (written in touch release in Nextion) - counts how many times it has been received.
+  uint8_t readtemp;                               //Had to put in to this to make sure didn't read messages twice
+  
+  while (Serial1.available() > 0) {               //Read every byte in buffer
+    readtemp = Serial1.read();
+    if (readtemp == 0xa5) {                       //Count the number of times 0xa5 has been received - can loop when at 3 (knows its an input)
+      ++a5count;                                  //This could be any string as long as defined in Nextion
+      if (a5count > 2) {
+        a5count = 0;
+        HMI_read_data_i = 0;
+      }
+    }
+    else {
+      a5count = 0;
+    }
+    HMI_read_data[HMI_read_data_i] = readtemp;
+    if (HMI_read_data_i == 5) {                    // Should receive 5 bytes (page/type/index/data0/data1)
+      switch (HMI_read_data[page]) {               //The page the data has come from
+/* ---------- Page 0 ----------*/
+        case page0:
+          switch (HMI_read_data[type]) {
+            case 0:
+              break;
+            case 1:                               
+              switch (HMI_read_data[Nindex]) {     //HMI_read_data[Nindex] is index of type of button (0 through 7 in this example) and each button has own index
+                //This updates variables based off button clicked
+                case 0:
+                  coil_d += 0.1;
+                  HMI_coil_d();
+                  break;
+                case 1:
+                  coil_d -= 0.1;
+                  HMI_coil_d();
+                  break;
+                case 2:
+                  bobbin_len += 0.1;
+                  HMI_bobbin_len();
+                  break;
+                case 3:
+                  bobbin_len -= 0.1;
+                  HMI_bobbin_len();
+                  break;
+                case 4:
+                  no_turns += 1;
+                  HMI_no_turns();
+                  break;
+                case 5:
+                  no_turns -= 1;
+                  HMI_no_turns();
+                  break;
+                case 6:
+                  time_per_turn += 0.1;
+                  HMI_time_per_turn();
+                  break;
+                case 7:
+                  time_per_turn -= 0.1;
+                  HMI_time_per_turn();
+                  break;
+              }
+              break;
+          }
+          break;
+/* ---------- Page 1 ----------*/        
+        case 1:    
+           switch (HMI_read_data[Nindex]) {   
+                case 0:
+                  HMI_display_all();  
+                  HMI_progress_tracker();   
+                  // motor code  
+            }             
+          break;
+      }
+    }
+    ++HMI_read_data_i;
+    if (HMI_read_data_i >= read_data_size) {            //make sure only reading data once
+      HMI_read_data_i = read_data_size - 1;
+    }
+  }
+}
+
+
